@@ -7,6 +7,8 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    @State private var locationManager = LocationManager()
+
     var body: some View {
         TabView {
             Tab("Camera", systemImage: "camera.fill") {
@@ -19,6 +21,7 @@ struct ContentView: View {
                 LogView()
             }
         }
+        .task { locationManager.requestIfNeeded() }
     }
 }
 

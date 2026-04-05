@@ -19,6 +19,9 @@ final class CameraViewModel {
     }
 
     var state: State = .idle
+    var capturedImage: UIImage?
+    var showResult = false
+    var showToughie = false
 
     private let identificationService: any iNaturalistServiceProtocol
     private let contentService: any ClaudeContentServiceProtocol
@@ -32,29 +35,38 @@ final class CameraViewModel {
     }
 
     func identify(image: UIImage, region: String) async {
+        capturedImage = image
         state = .identifying
         do {
             let candidates = try await identificationService.identify(image: image)
             guard let top = candidates.first, top.confidence >= 0.7 else {
-                state = .uncertain(candidates)
+                state = .uncertain(Array(candidates.prefix(5)))
+                showToughie = true
                 return
             }
             let content = try await contentService.generateContent(
                 for: top.scientificName, commonName: top.commonName, region: region)
             state = .confident(top, content)
+            showResult = true
         } catch {
             state = .error(error)
         }
     }
 
-    func reset() { state = .idle }
+    func reset() {
+        state = .idle
+        capturedImage = nil
+        showResult = false
+        showToughie = false
+    }
 }
 
 // MARK: - BrowseViewModel
 
 @Observable
 final class BrowseViewModel {
-    var speciesList: [SpeciesSummary] = []
+    var plantOfDay: SpeciesSummary?
+    var morePlants: [SpeciesSummary] = []   // rest of the list, excluding today's plant
     var isLoading = false
     var errorMessage: String?
 
@@ -69,16 +81,39 @@ final class BrowseViewModel {
         self.contentService = contentService
     }
 
-    func loadSpecies(for region: String) async {
+    func load(for region: String, latitude: Double = 0, longitude: Double = 0) async {
         isLoading = true
         errorMessage = nil
         do {
-            let list = try await identificationService.species(for: region)
-            speciesList = list.sorted { $0.spottability > $1.spottability }
+            var list = try await identificationService.species(for: region, latitude: latitude, longitude: longitude)
+            let dayIndex = (Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1) - 1
+            let todayIndex = list.isEmpty ? 0 : dayIndex % list.count
+            plantOfDay = list.isEmpty ? nil : list[todayIndex]
+            morePlants = list.isEmpty ? [] : Array(list[..<todayIndex] + list[(todayIndex + 1)...])
+            isLoading = false
+
+            // Enrich with local vernacular names without blocking the initial display.
+            let input = list.map { (scientificName: $0.scientificName, commonName: $0.commonName) }
+            let vernacular = (try? await contentService.fetchVernacularNames(for: input, region: region)) ?? [:]
+            guard !vernacular.isEmpty else { return }
+            list = list.map { species in
+                guard let local = vernacular[species.scientificName],
+                      local.lowercased() != species.commonName.lowercased() else { return species }
+                return SpeciesSummary(
+                    scientificName: species.scientificName,
+                    commonName: species.commonName,
+                    localName: local,
+                    thumbnailURL: species.thumbnailURL,
+                    spottability: species.spottability
+                )
+            }
+            let enrichedTodayIndex = list.isEmpty ? 0 : dayIndex % list.count
+            plantOfDay = list.isEmpty ? nil : list[enrichedTodayIndex]
+            morePlants = list.isEmpty ? [] : Array(list[..<enrichedTodayIndex] + list[(enrichedTodayIndex + 1)...])
         } catch {
             errorMessage = error.localizedDescription
+            isLoading = false
         }
-        isLoading = false
     }
 }
 

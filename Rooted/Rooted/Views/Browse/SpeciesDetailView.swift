@@ -11,6 +11,7 @@ struct SpeciesDetailView: View {
     let region: String
 
     @State private var content: SpeciesContent?
+    @State private var observationPhotos: [URL] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -39,14 +40,19 @@ struct SpeciesDetailView: View {
                 .background(.regularMaterial)
             }
         }
-        .task { await loadContent() }
+        .task {
+            async let photos = (try? iNaturalistService().observationPhotos(for: species.scientificName)) ?? []
+            async let loaded: Void = loadContent()
+            observationPhotos = await photos
+            await loaded
+        }
     }
 
     // MARK: - Subviews
 
     private var heroImage: some View {
         Group {
-            if let url = species.thumbnailURL {
+            if let url = largePhotoURL {
                 AsyncImage(url: url) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
@@ -61,6 +67,12 @@ struct SpeciesDetailView: View {
         .clipped()
     }
 
+    // Upgrades the thumbnail URL from square (75px) to large (1024px) for the hero.
+    private var largePhotoURL: URL? {
+        guard let url = species.thumbnailURL?.absoluteString else { return nil }
+        return URL(string: url.replacingOccurrences(of: "/square.", with: "/large."))
+    }
+
     private var heroPlaceholder: some View {
         Color.secondary.opacity(0.15)
             .overlay(
@@ -71,14 +83,20 @@ struct SpeciesDetailView: View {
     }
 
     private var speciesHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(species.commonName)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(species.primaryName)
                 .font(.title2.bold())
+            if species.localName != nil {
+                Text(species.commonName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             Text(species.scientificName)
                 .font(.subheadline)
                 .italic()
                 .foregroundStyle(.secondary)
             SpottabilityBar(value: species.spottability)
+                .padding(.top, 2)
         }
         .padding()
     }
@@ -102,7 +120,7 @@ struct SpeciesDetailView: View {
             )
             .padding()
         } else if let content {
-            ContentTabView(content: content)
+            ContentTabView(content: content, photos: observationPhotos)
         }
     }
 
@@ -119,11 +137,10 @@ struct SpeciesDetailView: View {
         )
         if let cached = try? modelContext.fetch(descriptor).first {
             content = SpeciesContent(
-                features: cached.features,
-                uses: cached.uses,
-                folklore: cached.folklore,
-                localSignificance: cached.localSignificance,
-                spottability: cached.spottability
+                leaves: cached.leaves, bark: cached.bark, branches: cached.branches,
+                height: cached.height, longevity: cached.longevity, seasons: cached.seasons,
+                uses: cached.uses, folklore: cached.folklore,
+                localSignificance: cached.localSignificance, spottability: cached.spottability
             )
             isLoading = false
             return
@@ -142,9 +159,9 @@ struct SpeciesDetailView: View {
             let cache = CachedSpeciesContent(
                 speciesName: species.scientificName,
                 commonName: species.commonName,
-                features: generated.features,
-                uses: generated.uses,
-                folklore: generated.folklore,
+                leaves: generated.leaves, bark: generated.bark, branches: generated.branches,
+                height: generated.height, longevity: generated.longevity, seasons: generated.seasons,
+                uses: generated.uses, folklore: generated.folklore,
                 localSignificance: generated.localSignificance,
                 spottability: generated.spottability,
                 heroImageURL: species.thumbnailURL?.absoluteString,

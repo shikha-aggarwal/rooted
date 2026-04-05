@@ -11,14 +11,18 @@ struct SpeciesRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             thumbnail
-            VStack(alignment: .leading, spacing: 4) {
-                Text(species.commonName)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(species.primaryName)
                     .font(.body)
+                if species.localName != nil {
+                    Text(species.commonName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Text(species.scientificName)
                     .font(.caption)
                     .italic()
                     .foregroundStyle(.secondary)
-                SpottabilityBar(value: species.spottability)
             }
         }
         .padding(.vertical, 4)
