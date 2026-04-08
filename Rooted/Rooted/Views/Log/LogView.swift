@@ -110,6 +110,13 @@ private struct LogRowView: View {
 private struct LogDetailView: View {
     let entry: LogEntry
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var content: SpeciesContent?
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    private let contentService = ClaudeContentService()
 
     var body: some View {
         NavigationStack {
@@ -117,11 +124,18 @@ private struct LogDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     heroImage
                     header
-                    if let cached = entry.content {
-                        Divider()
-                        ContentTabView(content: cached.toSpeciesContent())
-                    } else {
-                        noContentPlaceholder
+                    Divider()
+                    if let content {
+                        ContentTabView(content: content)
+                    } else if isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(40)
+                    } else if let errorMessage {
+                        Text(errorMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding()
                     }
                 }
             }
@@ -133,6 +147,7 @@ private struct LogDetailView: View {
                 }
             }
         }
+        .task { await loadContent() }
     }
 
     @ViewBuilder
@@ -160,10 +175,41 @@ private struct LogDetailView: View {
         .padding()
     }
 
-    private var noContentPlaceholder: some View {
-        Text("No details cached for this entry.")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .padding()
+    private func loadContent() async {
+        // Check cache first
+        let speciesName = entry.speciesName
+        let region = entry.region
+        let descriptor = FetchDescriptor<CachedSpeciesContent>(
+            predicate: #Predicate { $0.speciesName == speciesName && $0.region == region }
+        )
+        if let cached = try? modelContext.fetch(descriptor).first {
+            content = cached.toSpeciesContent()
+            return
+        }
+
+        // Cache miss — fetch from Claude
+        isLoading = true
+        do {
+            let result = try await contentService.generateContent(
+                for: entry.speciesName,
+                commonName: entry.commonName,
+                region: entry.region
+            )
+            let cached = CachedSpeciesContent(
+                speciesName: entry.speciesName,
+                commonName: entry.commonName,
+                leaves: result.leaves, bark: result.bark, branches: result.branches,
+                height: result.height, longevity: result.longevity, seasons: result.seasons,
+                uses: result.uses, folklore: result.folklore,
+                localSignificance: result.localSignificance,
+                spottability: result.spottability,
+                region: entry.region
+            )
+            modelContext.insert(cached)
+            content = result
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
     }
 }
