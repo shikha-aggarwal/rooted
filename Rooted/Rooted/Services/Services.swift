@@ -92,6 +92,9 @@ final class iNaturalistService: iNaturalistServiceProtocol {
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard statusCode == 200 else {
+            if statusCode >= 500 {
+                throw ServiceError.serverError
+            }
             let body = String(data: data, encoding: .utf8) ?? "no body"
             throw ServiceError.parseError("PlantNet returned \(statusCode): \(body.prefix(200))")
         }
@@ -373,7 +376,8 @@ final class ClaudeContentService: ClaudeContentServiceProtocol {
             "messages": [["role": "user", "content": prompt]],
         ]
 
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                                timeoutInterval: 60)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -383,6 +387,9 @@ final class ClaudeContentService: ClaudeContentServiceProtocol {
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard statusCode == 200 else {
+            if statusCode >= 500 {
+                throw ServiceError.serverError
+            }
             let body = String(data: data, encoding: .utf8) ?? "no body"
             throw ServiceError.parseError("Claude API returned \(statusCode): \(body.prefix(300))")
         }
@@ -421,6 +428,7 @@ enum ServiceError: LocalizedError {
     case identificationFailed
     case missingAPIKey
     case parseError(String)
+    case serverError
 
     var errorDescription: String? {
         switch self {
@@ -430,6 +438,7 @@ enum ServiceError: LocalizedError {
         case .identificationFailed: return "Could not identify species"
         case .missingAPIKey:        return "Claude API key not configured. Add your key to Secrets.plist."
         case .parseError(let msg):  return msg
+        case .serverError:          return "Server error — please try again."
         }
     }
 }

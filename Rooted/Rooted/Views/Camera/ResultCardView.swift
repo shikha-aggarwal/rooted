@@ -6,6 +6,17 @@
 import SwiftUI
 import SwiftData
 
+private extension UIImage {
+    func resized(maxDimension: CGFloat) -> UIImage {
+        let scale = min(maxDimension / size.width, maxDimension / size.height, 1)
+        guard scale < 1 else { return self }
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        return UIGraphicsImageRenderer(size: newSize).image { _ in
+            draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+}
+
 struct ResultCardView: View {
     let candidate: SpeciesCandidate
     let content: SpeciesContent
@@ -36,7 +47,7 @@ struct ResultCardView: View {
                 SaveButton(
                     speciesName: candidate.scientificName,
                     commonName: candidate.commonName,
-                    userPhoto: capturedImage.jpegData(compressionQuality: 0.8) ?? Data(),
+                    userPhoto: capturedImage.resized(maxDimension: 800).jpegData(compressionQuality: 0.8) ?? Data(),
                     region: region
                 )
                 .padding()
