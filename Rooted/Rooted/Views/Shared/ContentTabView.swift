@@ -54,9 +54,11 @@ struct ContentTabView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 180)
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .padding(.vertical, 14)
     }
@@ -107,6 +109,7 @@ struct ContentTabView: View {
             Text(text)
                 .font(.body)
                 .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
                 .padding(.bottom, 14)
         }

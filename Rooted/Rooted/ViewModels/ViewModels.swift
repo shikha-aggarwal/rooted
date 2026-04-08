@@ -86,10 +86,15 @@ final class BrowseViewModel {
         errorMessage = nil
         do {
             var list = try await identificationService.species(for: region, latitude: latitude, longitude: longitude)
+            guard !list.isEmpty else {
+                errorMessage = "No plants found for \"\(region)\". iNaturalist may be temporarily unavailable — try again shortly."
+                isLoading = false
+                return
+            }
             let dayIndex = (Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1) - 1
-            let todayIndex = list.isEmpty ? 0 : dayIndex % list.count
-            plantOfDay = list.isEmpty ? nil : list[todayIndex]
-            morePlants = list.isEmpty ? [] : Array(list[..<todayIndex] + list[(todayIndex + 1)...])
+            let todayIndex = dayIndex % list.count
+            plantOfDay = list[todayIndex]
+            morePlants = Array(list[..<todayIndex] + list[(todayIndex + 1)...])
             isLoading = false
 
             // Enrich with local vernacular names without blocking the initial display.

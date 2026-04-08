@@ -126,11 +126,7 @@ struct CandidateDetailView: View {
             predicate: #Predicate { $0.speciesName == name && $0.region == reg }
         )
         if let cached = try? modelContext.fetch(descriptor).first {
-            content = SpeciesContent(
-                leaves: cached.leaves, bark: cached.bark, branches: cached.branches,
-                height: cached.height, longevity: cached.longevity, seasons: cached.seasons,
-                uses: cached.uses, folklore: cached.folklore,
-                localSignificance: cached.localSignificance, spottability: cached.spottability)
+            content = cached.toSpeciesContent()
             isLoading = false
             return
         }

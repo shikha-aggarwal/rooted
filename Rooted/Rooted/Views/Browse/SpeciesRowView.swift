@@ -24,6 +24,7 @@ struct SpeciesRowView: View {
                     .italic()
                     .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
     }

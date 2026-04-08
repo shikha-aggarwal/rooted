@@ -4,6 +4,7 @@
 //
 
 import UIKit
+import CoreLocation
 
 // MARK: - Value Types
 
@@ -153,21 +154,28 @@ final class iNaturalistService: iNaturalistServiceProtocol {
     }
 
     private func resolvePlace(_ region: String) async throws -> Int {
-        // Use just the city portion — iNaturalist autocomplete matches better without country suffix.
-        let query = region.components(separatedBy: ",").first?.trimmingCharacters(in: .whitespaces) ?? region
+        // Use Apple's geocoder to convert the region name to coordinates,
+        // then hand off to resolveNearbyPlace which finds proper iNaturalist admin places.
+        let geocoder = CLGeocoder()
+        if let placemark = try? await geocoder.geocodeAddressString(region).first,
+           let location = placemark.location {
+            return try await resolveNearbyPlace(latitude: location.coordinate.latitude,
+                                                longitude: location.coordinate.longitude)
+        }
+        // Fallback: iNaturalist autocomplete
         var components = URLComponents(string: "https://api.inaturalist.org/v1/places/autocomplete")!
         components.queryItems = [
-            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "q", value: region),
             URLQueryItem(name: "per_page", value: "1"),
         ]
         let (data, response) = try await URLSession.shared.data(from: components.url!)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard statusCode == 200 else {
-            throw ServiceError.parseError("Place lookup failed (HTTP \(statusCode)) for \"\(query)\"")
+            throw ServiceError.parseError("Place lookup failed (HTTP \(statusCode)) for \"\(region)\"")
         }
         let decoded = try JSONDecoder().decode(INatPlacesResponse.self, from: data)
         guard let place = decoded.results.first else {
-            throw ServiceError.parseError("No places found for \"\(query)\" — try a different region name")
+            throw ServiceError.parseError("No places found for \"\(region)\" — try a different region name")
         }
         return place.id
     }
@@ -177,7 +185,6 @@ final class iNaturalistService: iNaturalistServiceProtocol {
         components.queryItems = [
             URLQueryItem(name: "taxon_id", value: "47126"),   // Plants
             URLQueryItem(name: "place_id", value: "\(placeID)"),
-            URLQueryItem(name: "rank", value: "species"),
             URLQueryItem(name: "per_page", value: "50"),
             URLQueryItem(name: "order", value: "desc"),
             URLQueryItem(name: "order_by", value: "count"),
@@ -202,19 +209,39 @@ final class iNaturalistService: iNaturalistServiceProtocol {
     }
 
     func observationPhotos(for scientificName: String) async throws -> [URL] {
-        var components = URLComponents(string: "https://api.inaturalist.org/v1/observations")!
+        // Prefer taxon photos (curated, higher quality) from the taxa endpoint.
+        var components = URLComponents(string: "https://api.inaturalist.org/v1/taxa")!
         components.queryItems = [
+            URLQueryItem(name: "q",        value: scientificName),
+            URLQueryItem(name: "rank",     value: "species"),
+            URLQueryItem(name: "per_page", value: "1"),
+        ]
+        if let (data, response) = try? await URLSession.shared.data(from: components.url!),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           let decoded = try? JSONDecoder().decode(INatTaxaSearchResponse.self, from: data),
+           let taxon = decoded.results.first {
+            let urls = taxon.taxonPhotos.prefix(4).compactMap { tp in
+                tp.photo.url
+                    .map { $0.replacingOccurrences(of: "/square.", with: "/medium.") }
+                    .flatMap(URL.init)
+            }
+            if !urls.isEmpty { return urls }
+        }
+
+        // Fallback: observation photos ordered by votes.
+        var obsComponents = URLComponents(string: "https://api.inaturalist.org/v1/observations")!
+        obsComponents.queryItems = [
             URLQueryItem(name: "taxon_name",    value: scientificName),
             URLQueryItem(name: "quality_grade", value: "research"),
             URLQueryItem(name: "photos",        value: "true"),
             URLQueryItem(name: "per_page",      value: "8"),
             URLQueryItem(name: "order_by",      value: "votes"),
-            URLQueryItem(name: "locale",        value: "en"),
         ]
-        let (data, response) = try await URLSession.shared.data(from: components.url!)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
-        let decoded = try JSONDecoder().decode(INatObservationsResponse.self, from: data)
-        return decoded.results.compactMap { obs in
+        guard let (obsData, obsResponse) = try? await URLSession.shared.data(from: obsComponents.url!),
+              (obsResponse as? HTTPURLResponse)?.statusCode == 200,
+              let obsDecoded = try? JSONDecoder().decode(INatObservationsResponse.self, from: obsData)
+        else { return [] }
+        return obsDecoded.results.prefix(4).compactMap { obs in
             obs.photos.first?.url
                 .map { $0.replacingOccurrences(of: "/square.", with: "/medium.") }
                 .flatMap(URL.init)
@@ -501,16 +528,21 @@ private struct ClaudeContentPayload: Decodable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        // Use try? + ?? "" so a null from Claude doesn't fail the whole decode
-        leaves            = (try? c.decode(String.self, forKey: .leaves))            ?? ""
-        bark              = (try? c.decode(String.self, forKey: .bark))              ?? ""
-        branches          = (try? c.decode(String.self, forKey: .branches))          ?? ""
-        height            = (try? c.decode(String.self, forKey: .height))            ?? ""
-        longevity         = (try? c.decode(String.self, forKey: .longevity))         ?? ""
-        seasons           = (try? c.decode(String.self, forKey: .seasons))           ?? ""
-        uses              = (try? c.decode(String.self, forKey: .uses))              ?? ""
-        folklore          = (try? c.decode(String.self, forKey: .folklore))          ?? ""
-        localSignificance = (try? c.decode(String.self, forKey: .localSignificance)) ?? ""
+        // Use try? + ?? "" so a null from Claude doesn't fail the whole decode.
+        // Also strip placeholder values Claude occasionally returns.
+        func clean(_ key: CodingKeys) -> String {
+            let s = (try? c.decode(String.self, forKey: key)) ?? ""
+            return s == "<UNKNOWN>" || s == "UNKNOWN" ? "" : s
+        }
+        leaves            = clean(.leaves)
+        bark              = clean(.bark)
+        branches          = clean(.branches)
+        height            = clean(.height)
+        longevity         = clean(.longevity)
+        seasons           = clean(.seasons)
+        uses              = clean(.uses)
+        folklore          = clean(.folklore)
+        localSignificance = clean(.localSignificance)
         // Accept both Int and Double (Claude occasionally returns 3.0 instead of 3)
         if let i = try? c.decode(Int.self, forKey: .spottability) {
             spottability = i
@@ -533,6 +565,24 @@ private struct INatObservationsResponse: Decodable {
         let photos: [Photo]
     }
     struct Photo: Decodable {
+        let url: String?
+    }
+}
+
+private struct INatTaxaSearchResponse: Decodable {
+    let results: [TaxonResult]
+    struct TaxonResult: Decodable {
+        let taxonPhotos: [TaxonPhoto]
+        enum CodingKeys: String, CodingKey { case taxonPhotos = "taxon_photos" }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            taxonPhotos = (try? c.decode([TaxonPhoto].self, forKey: .taxonPhotos)) ?? []
+        }
+    }
+    struct TaxonPhoto: Decodable {
+        let photo: PhotoDetail
+    }
+    struct PhotoDetail: Decodable {
         let url: String?
     }
 }

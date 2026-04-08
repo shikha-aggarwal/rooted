@@ -9,7 +9,6 @@ struct BrowseView: View {
     @State private var viewModel = BrowseViewModel()
     @State private var content: SpeciesContent?
     @State private var observationPhotos: [URL] = []
-    @State private var isLoadingContent = false
     @State private var contentError: String?
     @State private var showingRegionEntry = false
     @State private var regionDraft = ""
@@ -70,9 +69,8 @@ struct BrowseView: View {
             await viewModel.load(for: region, latitude: userLat, longitude: userLng)
             if let plant = viewModel.plantOfDay {
                 async let photos = (try? iNaturalistService().observationPhotos(for: plant.scientificName)) ?? []
-                async let loaded: Void = loadContent(for: plant)
+                await loadContent(for: plant)
                 observationPhotos = await photos
-                await loaded
             }
         }
     }
@@ -91,6 +89,7 @@ struct BrowseView: View {
                     morePlantsSection
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .safeAreaInset(edge: .bottom) {
             if content != nil {
@@ -156,7 +155,16 @@ struct BrowseView: View {
 
     @ViewBuilder
     private var contentSection: some View {
-        if isLoadingContent {
+        if let content {
+            ContentTabView(content: content, photos: observationPhotos)
+        } else if let error = contentError {
+            ContentUnavailableView(
+                "Couldn't load content",
+                systemImage: "exclamationmark.triangle",
+                description: Text(error)
+            )
+            .padding()
+        } else if viewModel.plantOfDay != nil {
             VStack(spacing: 10) {
                 ProgressView()
                 Text("Generating content…")
@@ -165,15 +173,6 @@ struct BrowseView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 48)
-        } else if let error = contentError {
-            ContentUnavailableView(
-                "Couldn't load content",
-                systemImage: "exclamationmark.triangle",
-                description: Text(error)
-            )
-            .padding()
-        } else if let content {
-            ContentTabView(content: content, photos: observationPhotos)
         }
     }
 
@@ -215,21 +214,17 @@ struct BrowseView: View {
             predicate: #Predicate { $0.speciesName == scientificName && $0.region == region }
         )
         if let cached = try? modelContext.fetch(descriptor).first {
-            content = SpeciesContent(
-                leaves: cached.leaves, bark: cached.bark, branches: cached.branches,
-                height: cached.height, longevity: cached.longevity, seasons: cached.seasons,
-                uses: cached.uses, folklore: cached.folklore,
-                localSignificance: cached.localSignificance, spottability: cached.spottability
-            )
+            content = cached.toSpeciesContent()
             return
         }
 
-        isLoadingContent = true
         do {
             let generated = try await ClaudeContentService().generateContent(
                 for: plant.scientificName, commonName: plant.commonName, region: region
             )
-            content = generated
+            await MainActor.run {
+                content = generated
+            }
             let cache = CachedSpeciesContent(
                 speciesName: plant.scientificName, commonName: plant.commonName,
                 leaves: generated.leaves, bark: generated.bark, branches: generated.branches,
@@ -238,10 +233,9 @@ struct BrowseView: View {
                 localSignificance: generated.localSignificance, spottability: generated.spottability,
                 heroImageURL: plant.thumbnailURL?.absoluteString, region: region
             )
-            modelContext.insert(cache)
+            await MainActor.run { modelContext.insert(cache) }
         } catch {
-            contentError = error.localizedDescription
+            await MainActor.run { contentError = error.localizedDescription }
         }
-        isLoadingContent = false
     }
 }

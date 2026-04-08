@@ -6,6 +6,10 @@
 import Foundation
 import SwiftData
 
+private func cleaned(_ s: String) -> String {
+    s == "<UNKNOWN>" || s == "UNKNOWN" ? "" : s
+}
+
 @Model
 final class CachedSpeciesContent {
     var speciesName: String          // scientific name — cache key
@@ -57,5 +61,14 @@ final class CachedSpeciesContent {
         self.heroImageURL     = heroImageURL
         self.region           = region
         self.generatedAt      = generatedAt
+    }
+
+    func toSpeciesContent() -> SpeciesContent {
+        SpeciesContent(
+            leaves: cleaned(leaves), bark: cleaned(bark), branches: cleaned(branches),
+            height: cleaned(height), longevity: cleaned(longevity), seasons: cleaned(seasons),
+            uses: cleaned(uses), folklore: cleaned(folklore),
+            localSignificance: cleaned(localSignificance), spottability: spottability
+        )
     }
 }
