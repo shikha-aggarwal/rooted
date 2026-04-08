@@ -96,7 +96,13 @@ final class iNaturalistService: iNaturalistServiceProtocol {
             throw ServiceError.parseError("PlantNet returned \(statusCode): \(body.prefix(200))")
         }
 
-        let decoded = try JSONDecoder().decode(PlantNetResponse.self, from: data)
+        let decoded: PlantNetResponse
+        do {
+            decoded = try JSONDecoder().decode(PlantNetResponse.self, from: data)
+        } catch {
+            let raw = String(data: data, encoding: .utf8) ?? "unreadable"
+            throw ServiceError.parseError("PlantNet decode failed: \(error.localizedDescription) | \(raw.prefix(300))")
+        }
         return decoded.results.prefix(5).map { result in
             SpeciesCandidate(
                 scientificName: result.species.scientificNameWithoutAuthor,
@@ -450,10 +456,25 @@ private struct PlantNetResponse: Decodable {
         let score: Double
         let species: Species
         let images: [PlantImage]
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            score   = try c.decode(Double.self, forKey: .score)
+            species = try c.decode(Species.self, forKey: .species)
+            images  = (try? c.decode([PlantImage].self, forKey: .images)) ?? []
+        }
+        enum CodingKeys: String, CodingKey { case score, species, images }
     }
     struct Species: Decodable {
         let scientificNameWithoutAuthor: String
         let commonNames: [String]
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            scientificNameWithoutAuthor = try c.decode(String.self, forKey: .scientificNameWithoutAuthor)
+            commonNames = (try? c.decode([String].self, forKey: .commonNames)) ?? []
+        }
+        enum CodingKeys: String, CodingKey { case scientificNameWithoutAuthor, commonNames }
     }
     struct PlantImage: Decodable {
         let url: ImageURLs

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C84C8B612F765D090071243C /* Secrets.plist in Resources */ = {isa = PBXBuildFile; fileRef = C84C8B602F765D090071243C /* Secrets.plist */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C84C8B382F765D0C0071243C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		C84C8B282F765D090071243C /* Rooted.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rooted.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C84C8B372F765D0C0071243C /* RootedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RootedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C84C8B412F765D0C0071243C /* RootedUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RootedUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C84C8B602F765D090071243C /* Secrets.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Secrets.plist; path = Rooted/Services/Secrets.plist; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +84,7 @@
 				C84C8B3A2F765D0C0071243C /* RootedTests */,
 				C84C8B442F765D0C0071243C /* RootedUITests */,
 				C84C8B292F765D090071243C /* Products */,
+				C84C8B602F765D090071243C /* Secrets.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -212,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C84C8B612F765D090071243C /* Secrets.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
